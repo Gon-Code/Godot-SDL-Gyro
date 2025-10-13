@@ -26,6 +26,11 @@ using namespace godot;
       void joycon_stop_calibrate();
       void joycon_auto_calibration();
 
+      Dictionary joycon_get_angular_velocity();
+      Dictionary joycon_get_acceleration();
+
+      // Vibrate Joy-Con controllers
+      bool joycon_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms);
 
       void calibrate();
       void stop_calibrate();

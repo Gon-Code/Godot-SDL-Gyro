@@ -80,6 +80,11 @@ void SDLGyro::_bind_methods() {
   ClassDB::bind_method(D_METHOD("joycon_calibrate"), &SDLGyro::joycon_calibrate);
   ClassDB::bind_method(D_METHOD("joycon_stop_calibrate"), &SDLGyro::joycon_stop_calibrate);
   ClassDB::bind_method(D_METHOD("joycon_auto_calibration"), &SDLGyro::joycon_auto_calibration);
+  ClassDB::bind_method(D_METHOD("joycon_get_angular_velocity"), &SDLGyro::joycon_get_angular_velocity);
+  ClassDB::bind_method(D_METHOD("joycon_get_acceleration"), &SDLGyro::joycon_get_acceleration);
+
+  // Export rumble functions for Joy-Con
+  ClassDB::bind_method(D_METHOD("joycon_rumble", "low_freq", "high_freq", "duration_ms"), &SDLGyro::joycon_rumble);
 }
 
 void SDLGyro::sdl_init() {
@@ -474,4 +479,50 @@ void SDLGyro::joycon_auto_calibration(){
   gyroSensor_L.SetCalibrationMode(GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion);
   gyroSensor_R.SetCalibrationMode(GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion);
 
+}
+
+// Returns the angular velocity of both Joy-Con controllers
+Dictionary SDLGyro::joycon_get_angular_velocity() {
+  Dictionary angular_velocity;
+  Vector3 left_gyro, right_gyro;
+
+  gyroSensor_L.GetCalibratedGyro(left_gyro[0], left_gyro[1], left_gyro[2]);
+  gyroSensor_R.GetCalibratedGyro(right_gyro[0], right_gyro[1], right_gyro[2]);
+
+  angular_velocity["left"] = left_gyro;
+  angular_velocity["right"] = right_gyro;
+  return angular_velocity;
+}
+
+// Returns the acceleration of both Joy-Con controllers
+Dictionary SDLGyro::joycon_get_acceleration() {
+    Dictionary acceleration;
+    Vector3 left_accel, right_accel;
+
+    if (accelEnabled_L) {
+        gyroSensor_L.GetProcessedAcceleration(
+            left_accel[0], left_accel[1], left_accel[2]
+        );
+    }
+
+    if (accelEnabled_R) {
+        gyroSensor_R.GetProcessedAcceleration(
+            right_accel[0], right_accel[1], right_accel[2]
+        );
+    }
+
+    acceleration["left"] = left_accel;
+    acceleration["right"] = right_accel;
+
+    return acceleration;
+}
+
+// Vibrate the JoyCon
+bool SDLGyro::joycon_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms) {
+  if(!controller) return false;
+  if (SDL_GameControllerHasRumble(controller)) {
+    int result = SDL_GameControllerRumble(controller, low_freq, high_freq, duration_ms);
+    return result == 0;
+  }
+  return false;
 }
