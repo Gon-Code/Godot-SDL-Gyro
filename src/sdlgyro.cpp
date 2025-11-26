@@ -2,340 +2,54 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <SDL2/SDL.h>
 #include <godot_cpp/variant/utility_functions.hpp>
-#include "GamepadMotion.hpp"
-#include "godot_cpp/variant/array.hpp"
-#include "godot_cpp/variant/vector2.hpp"
-#include "godot_cpp/variant/vector3.hpp"
-#include "godot_cpp/variant/vector4.hpp"
-#include "godot_cpp/variant/variant.hpp"
-#include <godot_cpp/godot.hpp>
 #include <chrono>
+#include <cmath>
 
 using namespace godot;
 
-SDL_Event event;  
-SDL_GameController *controller =nullptr;
-
-bool pollingEnabled=true;
-bool gyroEnabled=false;
-bool accelEnabled=false;
-float deltaTime=0.0;
-
-Vector3 Gyro;
-Vector3 Accel;
-Vector4 Orientation;
-
-
+// Constants for unit conversion
+// SDL gyroscope data is in rad/s. GamepadMotion expects deg/s.
 static constexpr float toDegPerSec = float(180. / M_PI);
+// SDL accelerometer data is in m/s². GamepadMotion expects g-force.
 static constexpr float toGs = 1.f / 9.8f;
-
-std::chrono::steady_clock::time_point oldTime;
-std::chrono::steady_clock::time_point newTime;
-
-GamepadMotion gyroSensor;
-
-// Joy-Con izquierdo y derecho
-// Estos son punteros a los controladores SDL para los Joy-Con izquierdo y derecho
-// Joy-Con izquierdo
-SDL_GameController *joy_con_left = nullptr;
-bool pollingEnabled_L = true;
-bool gyroEnabled_L = false;
-bool accelEnabled_L = false;
-Vector3 Gyro_L;
-Vector3 Accel_L;
-Vector4 Orientation_L;
-GamepadMotion gyroSensor_L;
-
-// Joy-Con derecho
-SDL_GameController *joy_con_right = nullptr;
-bool pollingEnabled_R = true;
-bool gyroEnabled_R = false;
-bool accelEnabled_R = false;
-Vector3 Gyro_R;
-Vector3 Accel_R;
-Vector4 Orientation_R;
-GamepadMotion gyroSensor_R;
 
 
 void SDLGyro::_bind_methods() {
+  // Initialization methods
   ClassDB::bind_method(D_METHOD("sdl_init"),&SDLGyro::sdl_init);
-  ClassDB::bind_method(D_METHOD("controller_init"),&SDLGyro::controller_init);
-  ClassDB::bind_method(D_METHOD("gamepad_polling"),&SDLGyro::gamepadPolling);
-  ClassDB::bind_method(D_METHOD("calibrate"),&SDLGyro::calibrate);
-  ClassDB::bind_method(D_METHOD("stop_calibrate"),&SDLGyro::stop_calibrate);
-  ClassDB::bind_method(D_METHOD("get_player_space"),&SDLGyro::getPlayer_space);
-  ClassDB::bind_method(D_METHOD("get_world_space"),&SDLGyro::getWorld_space);
-  ClassDB::bind_method(D_METHOD("get_gravity"),&SDLGyro::getGravity);
-  ClassDB::bind_method(D_METHOD("get_calibrated_gyro"),&SDLGyro::getCalibratedGyro);
-  ClassDB::bind_method(D_METHOD("get_processed_acceleration"),&SDLGyro::getProcessedAcceleration);
-  ClassDB::bind_method(D_METHOD("set_auto_calibration"),&SDLGyro::setAutoCalibration);
-  ClassDB::bind_method(D_METHOD("is_gyro_steady"),&SDLGyro::isCalibrationSteady);
-  ClassDB::bind_method(D_METHOD("get_calibration_confidence"),&SDLGyro::getCalibrationConfidence);
-  ClassDB::bind_method(D_METHOD("get_available_gyro_controllers"), &SDLGyro::get_available_gyro_controllers);
-  ClassDB::bind_method(D_METHOD("get_gamepad_name", "controller_index"), &SDLGyro::get_gamepad_name);
-  ClassDB::bind_method(D_METHOD("poll_motion_data", "controller_index"), &SDLGyro::poll_motion_data);
-  ClassDB::bind_method(D_METHOD("poll_both_joycon_gyros", "controller_index"), &SDLGyro::poll_both_joycon_gyros);
-  ClassDB::bind_method(D_METHOD("init_joycons"), &SDLGyro::init_joycons);
-  ClassDB::bind_method(D_METHOD("joycon_polling"), &SDLGyro::joycon_polling);
-  ClassDB::bind_method(D_METHOD("joycon_calibrate"), &SDLGyro::joycon_calibrate);
-  ClassDB::bind_method(D_METHOD("joycon_stop_calibrate"), &SDLGyro::joycon_stop_calibrate);
-  ClassDB::bind_method(D_METHOD("joycon_auto_calibration"), &SDLGyro::joycon_auto_calibration);
-  ClassDB::bind_method(D_METHOD("joycon_get_angular_velocity"), &SDLGyro::joycon_get_angular_velocity);
-  ClassDB::bind_method(D_METHOD("joycon_get_acceleration"), &SDLGyro::joycon_get_acceleration);
+  ClassDB::bind_method(D_METHOD("joycon_init"),&SDLGyro::joycon_init);
 
-  // Export rumble functions for Joy-Con
-  ClassDB::bind_method(D_METHOD("joycon_rumble", "low_freq", "high_freq", "duration_ms"), &SDLGyro::joycon_rumble);
+  // Polling methods
+  ClassDB::bind_method(D_METHOD("joycon_polling"),&SDLGyro::joycon_polling);
+  // Calibration methods
+  ClassDB::bind_method(D_METHOD("joycon_calibrate"),&SDLGyro::joycon_calibrate);
+  ClassDB::bind_method(D_METHOD("joycon_stop_calibrate"),&SDLGyro::joycon_stop_calibrate);
+  ClassDB::bind_method(D_METHOD("joycon_auto_calibration"),&SDLGyro::joycon_auto_calibration);
+  // Rumble
+  ClassDB::bind_method(D_METHOD("joycon_rumble"),&SDLGyro::joycon_rumble);
 }
+
 
 void SDLGyro::sdl_init() {
   
-  newTime=std::chrono::steady_clock::now();
-  oldTime=newTime;
-  //SDL initializATION
-  if((SDL_Init(SDL_INIT_GAMECONTROLLER))<0){
-    //UtilityFunctions::print("could not initialize SDL \n");
+  if (SDL_Init(SDL_INIT_GAMECONTROLLER) < 0) {
+    UtilityFunctions::print("Error SDL Init: %s\n", SDL_GetError());
   }
-  else{
-    //UtilityFunctions::print("SDL initialized!!!!!!!!!!! \n");
+  else {
+    UtilityFunctions::print("SDL Initialized Joy-Con Pair Combined.");
   }
 
-}
-
-//CALIBRATION
-void SDLGyro::calibrate(){
-  gyroSensor.Reset();
-  pollingEnabled=false;
-  gyroSensor.StartContinuousCalibration(); 
-}
-
-void SDLGyro::stop_calibrate(){
-  gyroSensor.PauseContinuousCalibration();
-  pollingEnabled=true;
-}
-
-bool SDLGyro::isCalibrationSteady(){
-  return gyroSensor.GetAutoCalibrationIsSteady();
-}
-
-float SDLGyro::getCalibrationConfidence(){
-  return gyroSensor.GetAutoCalibrationConfidence();
-}
-
-//Convert To 2D
-Variant SDLGyro::getPlayer_space(){
-  Vector2 playerSpace;
-  gyroSensor.GetWorldSpaceGyro(playerSpace[0],playerSpace[1]);
-  return playerSpace;
-}
-Variant SDLGyro::getWorld_space(){
-  Vector2 worldSpace;
-  gyroSensor.GetPlayerSpaceGyro(worldSpace[0],worldSpace[1]);
-  return worldSpace;
-}
-Variant SDLGyro::getGravity(){
-  Vector3 gravity;
-  gyroSensor.GetGravity(gravity[0],gravity[1], gravity[2]);
-  return gravity;
-}
-
-Variant SDLGyro::getCalibratedGyro(){
-  Vector3 calibratedgyro;
-  gyroSensor.GetCalibratedGyro(calibratedgyro[0],calibratedgyro[1], calibratedgyro[2]);
-  return calibratedgyro;
-}
-Variant SDLGyro::getProcessedAcceleration(){
-  Vector3 processedAcc;
-  gyroSensor.GetCalibratedGyro(processedAcc[0],processedAcc[1], processedAcc[2]);
-  return processedAcc;
+  oldTime = std::chrono::steady_clock::now();
 }
 
 
-void SDLGyro::controller_init(){
-  SDL_GameController *test_controller =nullptr;
-  bool test_gyroEnabled;
-  bool test_accelEnabled;
-   //controller initialization
-  for (int i=0;i<SDL_NumJoysticks();i++){
-    //UtilityFunctions::print(SDL_IsGameController(i),"\n");
-    test_controller = SDL_GameControllerOpen(i);
-    //UtilityFunctions::print(SDL_GameControllerNameForIndex(i),"\n");
-    if(SDL_IsGameController(i)){
-      //test gyro
-      if (SDL_GameControllerHasSensor(test_controller,SDL_SENSOR_GYRO)){
-        //UtilityFunctions::print("Gyro Detected\n");
-        SDL_GameControllerSetSensorEnabled(test_controller,SDL_SENSOR_GYRO,SDL_TRUE);
-        test_gyroEnabled=true;
-      }
-      else{ 
-        //UtilityFunctions::print("gyro disabled\n");
-        test_gyroEnabled=false;
-      }
-      //test accelerometer
-      if (SDL_GameControllerHasSensor(test_controller,SDL_SENSOR_ACCEL)){
-        //UtilityFunctions::print("accelerometer Detected\n");
-        SDL_GameControllerSetSensorEnabled(test_controller,SDL_SENSOR_ACCEL,SDL_TRUE);
-        test_accelEnabled=true;
-      }
-      else{
-        //UtilityFunctions::print("accelerometer not Detected\n");
-        test_accelEnabled=false;
-      } 
-    }
-    if (test_accelEnabled && test_gyroEnabled){
-      controller = test_controller;
-      gyroEnabled=true;
-      accelEnabled=true;
-    }
-  }
-}
+void SDLGyro::joycon_init() {
 
-void SDLGyro::setAutoCalibration(){
-  gyroSensor.SetCalibrationMode(GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion);
-}
-
-Variant SDLGyro::gamepadPolling(){
-  Vector4 orientation;
-  //TypedArray<float> orientation;
-  //IMU gyro
-  if (gyroEnabled && accelEnabled){
-    SDL_GameControllerGetSensorData(controller,SDL_SENSOR_GYRO, &Gyro[0], 3);
-  //IMU accelerometer//
-    SDL_GameControllerGetSensorData(controller,SDL_SENSOR_ACCEL, &Accel[0], 3);
-  //Sensor Fussion//
-    if (oldTime!=newTime)
-      newTime=std::chrono::steady_clock::now();
-    deltaTime=((float)std::chrono::duration_cast<std::chrono::microseconds>(newTime-oldTime).count()) / 1000000.0f;
-
-    gyroSensor.ProcessMotion(Gyro[0]*toDegPerSec, Gyro[1]*toDegPerSec, Gyro[2]*toDegPerSec, Accel[0]*toGs, Accel[1]*toGs, Accel[2]*toGs,deltaTime);
-    oldTime=std::chrono::steady_clock::now();
-
-    gyroSensor.GetOrientation(orientation[0], orientation[1], orientation[2], orientation[3]);
-  }
-
-  //event loop//
-  while(SDL_PollEvent(&event)){
-    switch (event.type) {
-      //hot pluging//
-      case SDL_CONTROLLERDEVICEADDED:
-        if (!controller){
-          //UtilityFunctions::print("controller conected\n");
-          //SDLGyro::controller_init();//
-        }
-        break;
-      case SDL_CONTROLLERDEVICEREMOVED:
+    if (controller) {
         SDL_GameControllerClose(controller);
-        controller=nullptr;
-        //UtilityFunctions::print("controller removed\n");
-        gyroEnabled=false;
-        accelEnabled=false;
-        break;
-    //-------------------//
-      case SDL_QUIT:
-        //UtilityFunctions::print("Quiting SDL.\n");
-      default:
-        break;
-    }
-  }
-  if (pollingEnabled){
-    return orientation;
-    }
-  else{
-    orientation = Vector4(1.0,0.0,0.0,0.0);
-    return orientation;
-  }
-}
-
-// Polls motion data from a specific controller index
-Array SDLGyro::get_available_gyro_controllers() {
-  Array result;
-  for (int i = 0; i < SDL_NumJoysticks(); i++) {
-    if (SDL_IsGameController(i)) {
-      SDL_GameController *temp = SDL_GameControllerOpen(i);
-      if (!temp) continue;
-
-      if (SDL_GameControllerHasSensor(temp, SDL_SENSOR_GYRO)) {
-        result.append(i);
-      }
-      SDL_GameControllerClose(temp);
-    }
-  }
-  return result;
-}
-
-// Polls motion data from a specific controller index
-String SDLGyro::get_gamepad_name(int controller_index) {
-  if (SDL_IsGameController(controller_index)) {
-    const char* name = SDL_GameControllerNameForIndex(controller_index);
-    if (name) return String(name);
-  }
-  return "[Desconocido]";
-}
-
-
-// Polls motion data from a specific controller index
-Variant SDLGyro::poll_motion_data(int controller_index) {
-  if (!SDL_IsGameController(controller_index)) {
-    UtilityFunctions::print("Controlador inválido\n");
-    return Variant();
-  }
-
-  SDL_GameController* temp = SDL_GameControllerOpen(controller_index);
-  if (!temp) return Variant();
-
-  if (!SDL_GameControllerHasSensor(temp, SDL_SENSOR_GYRO)) {
-    SDL_GameControllerClose(temp);
-    UtilityFunctions::print("Este mando no tiene giroscopio\n");
-    return Variant();
-  }
-
-  float gyro[3];
-  SDL_GameControllerSetSensorEnabled(temp, SDL_SENSOR_GYRO, SDL_TRUE);
-  SDL_GameControllerGetSensorData(temp, SDL_SENSOR_GYRO, gyro, 3);
-  SDL_GameControllerClose(temp);
-
-  Vector3 v(gyro[0] * toDegPerSec, gyro[1] * toDegPerSec, gyro[2] * toDegPerSec);
-  return v;
-}
-
-// Polls both Joy-Con gyros and returns their data in a Dictionary
-Dictionary SDLGyro::poll_both_joycon_gyros(int controller_index) {
-    Dictionary result;
-
-    if (!SDL_IsGameController(controller_index)) {
-        UtilityFunctions::print("Controlador inválido\n");
-        return result;
+        controller = nullptr;
     }
 
-    SDL_GameController *gc = SDL_GameControllerOpen(controller_index);
-    if (!gc) {
-        UtilityFunctions::print("No se pudo abrir el controlador\n");
-        return result;
-    }
-
-    float gyro_l[3] = {0}, gyro_r[3] = {0};
-
-    // Gyro Izquierdo
-    if (SDL_GameControllerHasSensor(gc, SDL_SENSOR_GYRO_L)) {
-        SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_GYRO_L, SDL_TRUE);
-        SDL_GameControllerGetSensorData(gc, SDL_SENSOR_GYRO_L, gyro_l, 3);
-    }
-
-    // Gyro Derecho
-    if (SDL_GameControllerHasSensor(gc, SDL_SENSOR_GYRO_R)) {
-        SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_GYRO_R, SDL_TRUE);
-        SDL_GameControllerGetSensorData(gc, SDL_SENSOR_GYRO_R, gyro_r, 3);
-    }
-
-    SDL_GameControllerClose(gc);
-
-    result["gyro_left"] = Vector3(gyro_l[0] * toDegPerSec, gyro_l[1] * toDegPerSec, gyro_l[2] * toDegPerSec);
-    result["gyro_right"] = Vector3(gyro_r[0] * toDegPerSec, gyro_r[1] * toDegPerSec, gyro_r[2] * toDegPerSec);
-
-    return result;
-}
-
-// Initializes Joy-Con controllers if both left and right sensors are available
-void SDLGyro::init_joycons() {
     int total = SDL_NumJoysticks();
 
     for (int i = 0; i < total; i++) {
@@ -344,185 +58,144 @@ void SDLGyro::init_joycons() {
         SDL_GameController *gc = SDL_GameControllerOpen(i);
         if (!gc) continue;
 
-        // Revisamos si este mando tiene ambos sensores L y R
-        if (SDL_GameControllerHasSensor(gc, SDL_SENSOR_GYRO_L) &&
-            SDL_GameControllerHasSensor(gc, SDL_SENSOR_GYRO_R)) {
+        SDL_GameControllerType type = SDL_GameControllerGetType(gc);
+
+        if (type == SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR) {
             
-            SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_GYRO_L, SDL_TRUE);
-            SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_ACCEL_L, SDL_TRUE);
-            SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_GYRO_R, SDL_TRUE);
-            SDL_GameControllerSetSensorEnabled(gc, SDL_SENSOR_ACCEL_R, SDL_TRUE);
-
             controller = gc;
+            
+            // Enabling Gyro and Accelerometer sensors
+            SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_GYRO_L, SDL_TRUE);
+            SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_ACCEL_L, SDL_TRUE);
+            SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_GYRO_R, SDL_TRUE);
+            SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_ACCEL_R, SDL_TRUE);
 
-            gyroEnabled_L = accelEnabled_L = true;
-            gyroEnabled_R = accelEnabled_R = true;
+            motion_L.Reset();
+            motion_R.Reset();
+            joycon_auto_calibration();
 
-            UtilityFunctions::print("Joy-Con izquierdo y derecho inicializados.");
-            break;
-        } else {
-            SDL_GameControllerClose(gc);
+            UtilityFunctions::print("¡Joy-Con Pair detectado por ID de Hardware!");
+            return; 
         }
+
+        SDL_GameControllerClose(gc);
     }
 
-    if (!controller) {
-        UtilityFunctions::print("No están conectados ambos sensores (L/R).");
-    }
+  UtilityFunctions::print("Joy-Con Pair not found. Verify Bluetooth connection.");
 }
 
 
-
-// Polls motion data from Joy-Con controllers
-// TODO: 
 Dictionary SDLGyro::joycon_polling() {
     Dictionary result;
 
+    bool connected = (controller != nullptr && SDL_GameControllerGetAttached(controller));
+
+    if (!connected) {
+        if (controller) {
+            SDL_GameControllerClose(controller);
+            controller = nullptr;
+        }
+        // Return neutral values
+        result["gyro_l"] = Vector3(); result["accel_l"] = Vector3(); result["quat_l"] = Quaternion();
+        result["gyro_r"] = Vector3(); result["accel_r"] = Vector3(); result["quat_r"] = Quaternion();
+        return result;
+    }
+
     auto now = std::chrono::steady_clock::now();
-    deltaTime = ((float)std::chrono::duration_cast<std::chrono::microseconds>(now - oldTime).count()) / 1000000.0f;
+    float dt = ((float)std::chrono::duration_cast<std::chrono::microseconds>(now - oldTime).count()) / 1000000.0f;
     oldTime = now;
 
-    // Joy-Con izquierdo
-    if (gyroEnabled_L && accelEnabled_L && pollingEnabled_L && controller) {
-        SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO_L, &Gyro_L[0], 3);
-        SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL_L, &Accel_L[0], 3);
+    // Safety clamp for dt (prevents physics explosion if game freezes)
+    if (dt > 0.1f) dt = 0.1f;
 
-        gyroSensor_L.ProcessMotion(
-            Gyro_L[0] * toDegPerSec, Gyro_L[1] * toDegPerSec, Gyro_L[2] * toDegPerSec,
-            Accel_L[0] * toGs, Accel_L[1] * toGs, Accel_L[2] * toGs,
-            deltaTime
-        );
-
-        // Joy-Con derecho
-        if (gyroEnabled_R && accelEnabled_R && pollingEnabled_R && controller) {
-            SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO_R, &Gyro_R[0], 3);
-            SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL_R, &Accel_R[0], 3);
+    // Read Sensors from SDL
+    float gL[3], aL[3], gR[3], aR[3];
     
-            gyroSensor_R.ProcessMotion(
-                Gyro_R[0] * toDegPerSec, Gyro_R[1] * toDegPerSec, Gyro_R[2] * toDegPerSec,
-                Accel_R[0] * toGs, Accel_R[1] * toGs, Accel_R[2] * toGs,
-                deltaTime
-            );
-    
-            gyroSensor_R.GetOrientation(
-                Orientation_R[0], Orientation_R[1], Orientation_R[2], Orientation_R[3]
-            );
-        }
-        gyroSensor_L.GetOrientation(
-            Orientation_L[0], Orientation_L[1], Orientation_L[2], Orientation_L[3]
-        );
+    SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO_L, gL, 3);
+    SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL_L, aL, 3);
+    SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO_R, gR, 3);
+    SDL_GameControllerGetSensorData(controller, SDL_SENSOR_ACCEL_R, aR, 3);
+
+    // Convert SDL units to JibbSmart units
+    motion_L.ProcessMotion(
+        gL[0] * toDegPerSec, gL[1] * toDegPerSec, gL[2] * toDegPerSec,
+        aL[0] * toGs, aL[1] * toGs, aL[2] * toGs, dt
+    );
+
+    motion_R.ProcessMotion(
+        gR[0] * toDegPerSec, gR[1] * toDegPerSec, gR[2] * toDegPerSec,
+        aR[0] * toGs, aR[1] * toGs, aR[2] * toGs, dt
+    );
+
+    // Package Data for Godot
+    float w, x, y, z; // Temp vars for Quaternion
+    float cx, cy, cz; // Temp vars for Vectors
+
+    // --- LEFT ---
+    motion_L.GetCalibratedGyro(cx, cy, cz);
+    result["gyro_l"] = Vector3(cx, cy, cz); // Angular Velocity
+
+    motion_L.GetProcessedAcceleration(cx, cy, cz);
+    result["accel_l"] = Vector3(cx, cy, cz); // Acceleration
+
+    motion_L.GetOrientation(w, x, y, z);
+
+    // GamepadMotion outputs (w,x,y,z). Godot expects (x,y,z,w).
+    result["quat_l"] = Quaternion(x, y, z, w); 
+
+    // --- RIGHT ---
+    motion_R.GetCalibratedGyro(cx, cy, cz);
+    result["gyro_r"] = Vector3(cx, cy, cz);
+
+    motion_R.GetProcessedAcceleration(cx, cy, cz);
+    result["accel_r"] = Vector3(cx, cy, cz);
+
+    motion_R.GetOrientation(w, x, y, z);
+    result["quat_r"] = Quaternion(x, y, z, w);
+
+    // Keep SDL event loop alive
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) { 
+        // Drain event queue
     }
 
-
-    // IMPORTANTE: procesar el event loop para mantener SDL funcionando correctamente
-    while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-            case SDL_CONTROLLERDEVICEADDED:
-                // Podrías volver a llamar a init_joycons() si necesitas reconectar
-                break;
-
-            case SDL_CONTROLLERDEVICEREMOVED:
-                SDL_GameControllerClose(controller);
-                controller = nullptr;
-                gyroEnabled_L = accelEnabled_L = false;
-                gyroEnabled_R = accelEnabled_R = false;
-                break;
-
-            case SDL_QUIT:
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    if( pollingEnabled_L && pollingEnabled_R){
-      // Guardamos en el diccionario
-      result["left"] = Orientation_L;
-      result["right"] = Orientation_R;
-      return result;
-    }
-
-    else{
-      result["left"] = Vector4(1.0, 0.0, 0.0, 0.0);
-      result["right"] = Vector4(1.0, 0.0, 0.0, 0.0);
-      return result;
-    }
+    return result;
 }
 
 
-// Starts the continuous calibration for both Joy-Con gyros
+// Calibration Methods
+
 void SDLGyro::joycon_calibrate() {
-    gyroSensor_L.Reset();
-    gyroSensor_R.Reset();
+    motion_L.Reset(); 
+    motion_R.Reset();
 
-    pollingEnabled_L = false;
-    pollingEnabled_R = false;
+    motion_L.StartContinuousCalibration();
+    motion_R.StartContinuousCalibration();
     
-    gyroSensor_L.StartContinuousCalibration();
-    gyroSensor_R.StartContinuousCalibration();
+    UtilityFunctions::print("JoyCon calibration started...");
 }
 
 
-// Stops the continuous calibration for both Joy-Con gyros
 void SDLGyro::joycon_stop_calibrate() {
-    gyroSensor_L.PauseContinuousCalibration();
-    gyroSensor_R.PauseContinuousCalibration();
-
-    pollingEnabled_L = true;
-    pollingEnabled_R = true;
+    motion_L.PauseContinuousCalibration();
+    motion_R.PauseContinuousCalibration();
+    
+    UtilityFunctions::print("Manual calibration stopped.");
 }
 
 
-// Auto calibration for the Joy-Con gyros
-// This function sets the calibration mode to use stillness and sensor fusion
-void SDLGyro::joycon_auto_calibration(){
-  gyroSensor_L.SetCalibrationMode(GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion);
-  gyroSensor_R.SetCalibrationMode(GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion);
-
+void SDLGyro::joycon_auto_calibration() {
+    int mode = GamepadMotionHelpers::Stillness | GamepadMotionHelpers::SensorFusion;
+    
+    motion_L.SetCalibrationMode((GamepadMotionHelpers::CalibrationMode)mode);
+    motion_R.SetCalibrationMode((GamepadMotionHelpers::CalibrationMode)mode);
+    
+    UtilityFunctions::print("Auto-Calibration activated.");
 }
 
-// Returns the angular velocity of both Joy-Con controllers
-Dictionary SDLGyro::joycon_get_angular_velocity() {
-  Dictionary angular_velocity;
-  Vector3 left_gyro, right_gyro;
-
-  gyroSensor_L.GetCalibratedGyro(left_gyro[0], left_gyro[1], left_gyro[2]);
-  gyroSensor_R.GetCalibratedGyro(right_gyro[0], right_gyro[1], right_gyro[2]);
-
-  angular_velocity["left"] = left_gyro;
-  angular_velocity["right"] = right_gyro;
-  return angular_velocity;
-}
-
-// Returns the acceleration of both Joy-Con controllers
-Dictionary SDLGyro::joycon_get_acceleration() {
-    Dictionary acceleration;
-    Vector3 left_accel, right_accel;
-
-    if (accelEnabled_L) {
-        gyroSensor_L.GetProcessedAcceleration(
-            left_accel[0], left_accel[1], left_accel[2]
-        );
-    }
-
-    if (accelEnabled_R) {
-        gyroSensor_R.GetProcessedAcceleration(
-            right_accel[0], right_accel[1], right_accel[2]
-        );
-    }
-
-    acceleration["left"] = left_accel;
-    acceleration["right"] = right_accel;
-
-    return acceleration;
-}
-
-// Vibrate the JoyCon
+// Rumble Method
 bool SDLGyro::joycon_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms) {
-  if(!controller) return false;
-  if (SDL_GameControllerHasRumble(controller)) {
-    int result = SDL_GameControllerRumble(controller, low_freq, high_freq, duration_ms);
-    return result == 0;
-  }
-  return false;
+    if (!controller) return false;
+
+    return SDL_GameControllerRumble(controller, low_freq, high_freq, duration_ms) == 0;
 }

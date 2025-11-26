@@ -1,52 +1,54 @@
 #ifndef SDLGYRO_H
 #define SDLGYRO_H
+#define _USE_MATH_DEFINES
+#include <cmath>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+#include <SDL2/SDL.h>
+#include <chrono>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/variant.hpp>
+#include <godot_cpp/variant/vector3.hpp>
+#include <godot_cpp/variant/quaternion.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
+
+#include "GamepadMotion.hpp"
+
 using namespace godot;
 
   class SDLGyro : public Object{
     GDCLASS(SDLGyro,Object);
-    public:
-      void sdl_init();
-      void controller_init();
 
-      Variant gamepadPolling();
+  public:
+    // Initialization
+    void sdl_init();
+    void joycon_init();
 
-      // Modificacion Multiples controles
-      Array get_available_gyro_controllers();
-      String get_gamepad_name(int controller_index);
-      Variant poll_motion_data(int controller_index);
-      godot::Dictionary poll_both_joycon_gyros(int controller_index);
+    // Get motion data
+    Dictionary joycon_polling();
 
-      // Funciones para Joy-Con
-      void init_joycons();
-      Dictionary joycon_polling();
-      void joycon_calibrate();
-      void joycon_stop_calibrate();
-      void joycon_auto_calibration();
+    // Calibration
+    void joycon_calibrate();
+    void joycon_stop_calibrate();
+    void joycon_auto_calibration();
 
-      Dictionary joycon_get_angular_velocity();
-      Dictionary joycon_get_acceleration();
+    // Rumble
+    bool joycon_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms);
 
-      // Vibrate Joy-Con controllers
-      bool joycon_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms);
+    private:
+      // Unique pointer to the SDL GameController
+      SDL_GameController *controller = nullptr;
 
-      void calibrate();
-      void stop_calibrate();
+      // JibbSmart Helpers
+      GamepadMotion motion_L;
+      GamepadMotion motion_R;
 
-      Variant getPlayer_space();//not working
-      Variant getWorld_space();//not working
+      // Timing
+      std::chrono::steady_clock::time_point oldTime;
 
-      Variant getGravity();//not working
-  
-      Variant getCalibratedGyro();
-
-      Variant getProcessedAcceleration();
-
-      void setAutoCalibration();
-      bool isCalibrationSteady();
-      float getCalibrationConfidence();
     protected:
       static void _bind_methods();
   };
