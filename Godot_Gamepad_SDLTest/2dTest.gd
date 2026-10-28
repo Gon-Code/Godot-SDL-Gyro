@@ -1,18 +1,13 @@
 extends Node2D
-var Gyro=SDLGyro.new()
-var world_space=Gyro.getWorld_space()
-var player_space=Gyro.getPlayer_space()
+var gyro := SDLGyro.new()
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
-  Gyro.sdl_init()
-  Gyro.controller_init()
-
+  gyro.sdl_init()
+  gyro.joycon_init()
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(_delta):
-  Gyro.gamepadPoling()
-  prints(Gyro.getWorld_space())
-  world_space=Gyro.getPlayer_space()
-  $Sprite2D.position.x=world_space[0]
-  $Sprite2D.position.y=world_space[1]
+  var motion_data: Dictionary = gyro.joycon_polling()
+  var left_orientation: Quaternion = motion_data.get("quat_l", Quaternion.IDENTITY)
+  $Sprite2D.rotation = left_orientation.get_euler().z
