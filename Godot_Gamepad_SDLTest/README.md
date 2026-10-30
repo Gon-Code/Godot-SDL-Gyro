@@ -6,7 +6,7 @@ This Godot project demonstrates the Joy-Con Pair motion API provided by the `god
 
 1. Connect a Joy-Con Pair before running the project.
 2. Open this folder in Godot and run `JoyConDemo.tscn` (the configured main scene).
-3. Press **C** to start or stop continuous calibration. Keep the Joy-Cons still while calibrating.
+3. Automatic stillness/sensor-fusion calibration is configured when the pair is detected. Press **C** to optionally start or stop manual continuous calibration; keep the Joy-Cons still while it is active. Automatic calibration remains configured when manual calibration is stopped.
 
 The native extension must be built for the current platform and present at the path configured by `addons/godot-sdl-gyro/sdlgyro.gdextension`. This repository does not currently include a complete set of release binaries.
 

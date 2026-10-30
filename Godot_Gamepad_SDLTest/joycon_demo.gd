@@ -32,9 +32,11 @@ func _process(_delta: float) -> void:
 	joy_con_l.quaternion = left_orientation * initial_left_orientation
 	joy_con_r.quaternion = right_orientation * initial_right_orientation
 
-	var calibration_status := "Press C to start continuous calibration"
+	var calibration_status := "Automatic calibration is configured on detection; press C for manual calibration"
 	if is_calibrating:
-		calibration_status = "Calibrating — keep both Joy-Cons still; press C to stop"
+		calibration_status = "Manual calibration active — keep both Joy-Cons still; press C to stop"
+	else:
+		calibration_status += " (automatic mode resumes after stopping)"
 
 	var left_line := "L  gyro (deg/s): %s   accel (g): %s" % [left_gyro, left_accel]
 	var right_line := "R  gyro (deg/s): %s   accel (g): %s" % [right_gyro, right_accel]
