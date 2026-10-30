@@ -1,0 +1,44 @@
+[gd_scene load_steps=4 format=3 uid="uid://dlhxj7b8cnjjb"]
+
+[ext_resource type="Script" path="res://joycon_demo.gd" id="1_cclw0"]
+[ext_resource type="PackedScene" uid="uid://dhhw3lu2kbob6" path="res://assets/joycons/nintendo_switch_joycon.glb" id="3_kcuku"]
+[ext_resource type="PackedScene" uid="uid://c85emk1be877k" path="res://assets/joycons/left_joy-con.glb" id="4_710lw"]
+
+[node name="JoyConDemo" type="Node3D"]
+rotation_edit_mode = 1
+script = ExtResource("1_cclw0")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(-4.37114e-08, -1, -4.37114e-08, 0, -4.37114e-08, 1, -1, 4.37114e-08, 1.91069e-15, -0.133899, 2.55488, -1.39062)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -0.0255488, 0.999674, 0, -0.999674, -0.0255488, 0, 6.12275, 0)
+
+[node name="DirectionalLight3D2" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.999385, -0.00089565, 0.035045, -0.0350565, 0.0255331, -0.999059, 0, -0.999674, -0.0255488, 0, -10.7553, 0)
+
+[node name="Label" type="Label" parent="."]
+visible = true
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -400.0
+offset_top = -145.0
+offset_right = 400.0
+offset_bottom = -15.0
+grow_horizontal = 2
+grow_vertical = 0
+size_flags_horizontal = 0
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_colors/font_outline_color = Color(0.847059, 0.847059, 0.847059, 1)
+theme_override_constants/outline_size = 3
+text = "Joy-Con Pair sensor demo"
+horizontal_alignment = 1
+
+[node name="joyConR" parent="." instance=ExtResource("3_kcuku")]
+transform = Transform3D(0.025, 0, 0, 0, 0.025, 0, 0, 0, 0.025, 0, 0, -3)
+
+[node name="joyConL" parent="." instance=ExtResource("4_710lw")]
+transform = Transform3D(0.0197177, -0.599591, -0.0100462, 0.0168418, -0.00949392, 0.599689, -0.599439, -0.0199894, 0.0165184, 0, 0, 0)
